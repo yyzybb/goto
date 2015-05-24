@@ -4,82 +4,91 @@ import "net"
 import "time"
 import "common"
 import "sync"
+import proto "encoding/protobuf/proto"
 
-type request_chan chan *RpcRequest
+type send_chan chan IContext
 
 type RpcConn struct {
 	low_layer     net.Conn
-	request_queue request_chan
+	send_queue	  send_chan
 	channel_ok    bool
 	send_timeout  time.Duration
 	recv_timeout  time.Duration
 	recv_buf      []byte
 	chan_lock     sync.RWMutex
-	request_map	  map[uint32]*RpcRequest
-	seq_num	      uint32
+	ctx_map		  map[uint32]ICallContext
+	start_seq_num uint32
+	method_map	  *MethodMap
 }
 
 func NewRpcConn(low_layer net.Conn,
-	send_timeout time.Duration,
-	recv_timeout time.Duration,
-	request_queue_c int) *RpcConn {
+		send_timeout time.Duration,
+		recv_timeout time.Duration,
+		method_map	  *MethodMap) *RpcConn {
 
 	return &RpcConn{low_layer,
-		make(request_chan, request_queue_c),
+		make(send_chan),
 		true,
 		send_timeout,
 		recv_timeout,
 		make([]byte, 0),
 		sync.RWMutex{},
-		make(map[uint32]*RpcRequest),
+		make(map[uint32]ICallContext),
 		0,
-	}
+		method_map }
 }
 
 func (c *RpcConn) Active() {
 	// write
 	go func() {
 		for {
-			ctx, ok := <-c.request_queue
+			ctx, ok := <-c.send_queue
 			if ok == false {
 				break
 			}
 
-			b, err := ctx.ToBytes()
-			if err != nil {
-				go ctx.Call(err)
+			b, e := ctx.Marshal()
+			if e != nil {
+				ctx.CallError(e)
 				continue
 			}
 
-			_, e := c.low_layer.Write(b)
+			_, e = c.low_layer.Write(b)
 			if e != nil {
-				go ctx.Call(err)
+				ctx.CallError(e)
 				break
 			}
 
-			c.seq_num ++
-			ctx.seq_num = c.seq_num
-			old_ctx, ok := c.request_map[ctx.seq_num]
-			if ok == true {
-				go old_ctx.Call(common.NewError(common.RpcError_Overwrite, ""))
+			if ctx.GetRpcType() != RpcType_Request {
+				continue
             }
 
-			c.request_map[ctx.seq_num] = ctx
-			time.AfterFunc(c.recv_timeout, func(){
-				if ctx.Call(common.NewError(common.RpcError_RecvTimeout, "")) == true {
-					delete(c.request_map, ctx.seq_num)
+			if call_ctx, ok := ctx.(ICallContext); ok {
+				c.start_seq_num++
+				ctx.SetSeqNum(c.start_seq_num)
+
+				old_ctx, ok := c.ctx_map[ctx.GetSeqNum()]
+				if ok == true {
+					old_ctx.CallError(common.NewError(common.RpcError_Overwrite))
 				}
-			})
+
+				c.ctx_map[ctx.GetSeqNum()] = call_ctx
+				time.AfterFunc(c.recv_timeout, func(){
+					if ctx.CallError(common.NewError(common.RpcError_RecvTimeout)) == true {
+						delete(c.ctx_map, ctx.GetSeqNum())
+					}
+				})
+            }
 		}
 
 		go c.Shutdown()
 		for {
-			ctx, ok := <-c.request_queue
+			ctx, ok := <-c.send_queue
 			if ok == false {
 				break
 			}
 
-			go ctx.Call(common.NewError(common.RpcError_NotConn, ""))
+			ctx.CallError(common.NewError(common.RpcError_NotConn))
 		}
 
 		c.low_layer.Close()
@@ -96,46 +105,113 @@ func (c *RpcConn) Active() {
 
 			c.recv_buf = append(c.recv_buf, b[:n]...)
 		Retry:
-			head, body, length, err := ParsePackage(c.recv_buf)
+			pkg, body, consume, err := Unmarshal_PackageHead(c.recv_buf)
 			if err != nil {
 				// data parse error
 				break
             }
 
-			if head != nil {
-				c.recv_buf = c.recv_buf[length:]
-				go c.DoPackage(head, body)
+			if pkg != nil {
+				c.recv_buf = c.recv_buf[consume:]
+				c.do_package(pkg, body)
 				goto Retry
             }
         }
 
-		for _, ctx := range c.request_map {
-			go ctx.Call(common.NewError(common.RpcError_NotConn, ""))
+		for _, ctx := range c.ctx_map {
+			ctx.CallError(common.NewError(common.RpcError_NotConn))
         }
 
 		c.low_layer.Close()
     }()
 }
 
-func (c *RpcConn) DoPackage(head *RpcPackageHead, body []byte) {
+func (c *RpcConn) do_package(pkg *Package, body []byte) {
+	if pkg.rpc_type == RpcType_Response {
+		ctx, ok := c.ctx_map[pkg.seq_num]
+		if ok == false {
+			// request was timeout, discard it.
+			return 
+		}
 
+		method_info, ok := (*c.method_map)[pkg.method]
+		if ok == false {
+			// error response.
+			return 
+		}
+
+		pkg.body = method_info.rsp_factory()
+		if pkg.body == nil {
+			// create response struct error.
+			return 
+		}
+
+		e := Unmarshal_Body(pkg, body)
+		if e != nil {
+			return
+		}
+
+		ctx.Call(nil, pkg.body)
+		delete(c.ctx_map, pkg.seq_num)
+    } else {
+		method_info, ok := (*c.method_map)[pkg.method]
+		if ok == false {
+			// unkown method
+			if pkg.rpc_type == RpcType_Request {
+				go c.Reply(pkg, common.RpcError_NoMethod, nil)
+            }
+
+			return
+		}
+
+		pkg.body = method_info.req_factory()
+		if pkg.body == nil {
+			// create request struct error.
+			return 
+		}
+
+		e := Unmarshal_Body(pkg, body)
+		if e != nil {
+			return
+		}
+
+		method_info.service_func(pkg, pkg.body)
+    }
 }
 
-func (c *RpcConn) AsynCall(method string, body IRpcData, cb RpcCallback) error {
+func (c *RpcConn) AsynCall(method string, body proto.Message, cb RpcCallback) error {
 	if c.channel_ok == false {
-		return common.NewError(common.RpcError_NotConn, "")
+		return common.NewError(common.RpcError_NotConn)
 	}
 
-	request := NewRpcRequest(method, body, cb)
+	request := NewCallContext(method, body, cb)
 	t := time.After(c.send_timeout)
 
 	c.chan_lock.RLock()
 	defer c.chan_lock.RUnlock()
 	select {
-	case c.request_queue <- request:
+	case c.send_queue <- request:
 		return nil
 	case <-t:
-		return common.NewError(common.RpcError_SendTimeout, "")
+		return common.NewError(common.RpcError_SendTimeout)
+	}
+}
+
+func (c *RpcConn) Reply(ctx IContext, rsp_status byte, body proto.Message) error {
+	if c.channel_ok == false {
+		return common.NewError(common.RpcError_NotConn)
+	}
+
+	rsp := NewResponsePackage(rsp_status, ctx.GetSeqNum(), ctx.GetMethod(), body)
+	t := time.After(c.send_timeout)
+
+	c.chan_lock.RLock()
+	defer c.chan_lock.RUnlock()
+	select {
+	case c.send_queue <- rsp:
+		return nil
+	case <-t:
+		return common.NewError(common.RpcError_SendTimeout)
 	}
 }
 
@@ -145,7 +221,7 @@ func (c *RpcConn) Shutdown() {
 
 		c.chan_lock.Lock()
 		defer c.chan_lock.Unlock()
-		close(c.request_queue)
+		close(c.send_queue)
 	}
 }
 

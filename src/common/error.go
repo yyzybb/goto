@@ -1,23 +1,37 @@
 package common
 
 const (
-	RpcError_NotConn = iota
+	RpcError_Ok byte = iota
+	RpcError_NotConn
 	RpcError_PackTooLarge
 	RpcError_Overwrite
 	RpcError_SendTimeout
 	RpcError_RecvTimeout
-	RpcError_NoService
 	RpcError_NoMethod
-	RpcError_Fatal
+	RpcError_ParseError
+	RpcError_MagicCodeError
 )
+
+type IError interface {
+	Code() int
+	Error() string
+}
 
 type Error struct {
 	code int
 	what string
 }
 
-func NewError(code int, what string) *Error {
+func NewError(enum byte) *Error {
+	return &Error{int(enum), ""}
+}
+
+func NewErrorMsg(code int, what string) *Error {
 	return &Error{code, what}
+}
+
+func (e *Error) Code() int {
+	return e.code
 }
 
 func (e *Error) Error() string {
