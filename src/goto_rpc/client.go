@@ -1,27 +1,27 @@
-package transport
+package goto_rpc
 
 import "net"
 import "time"
 import proto "encoding/protobuf/proto"
 
-type RpcClient struct {
+type Client struct {
 	RpcConn
 }
 
-func NewRpcClient(c net.Conn) *RpcClient {
+func NewClient(c net.Conn) *Client {
 	method_map := make(MethodMap)
-	rc := &RpcClient{
+	rc := &Client{
 		*NewRpcConn(c, 3 * time.Second, 3 * time.Second, &method_map)}
 	rc.active()
 	return rc
 }
 
-func (this *RpcClient) SetTimeout(send_timeout, recv_timeout time.Duration) {
+func (this *Client) SetTimeout(send_timeout, recv_timeout time.Duration) {
 	this.send_timeout = send_timeout
 	this.recv_timeout = recv_timeout
 }
 
-func (this *RpcClient) Call(method string, request proto.Message) (response proto.Message, err error) {
+func (this *Client) Call(method string, request proto.Message) (response proto.Message, err error) {
 
 	c_rsp := make(chan proto.Message)
 	c_err := make(chan error)

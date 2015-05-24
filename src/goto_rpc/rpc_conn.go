@@ -1,4 +1,4 @@
-package transport
+package goto_rpc
 
 import "net"
 import "time"

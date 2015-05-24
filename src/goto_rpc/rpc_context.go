@@ -1,4 +1,4 @@
-package transport
+package goto_rpc
 
 import "common"
 import proto "encoding/protobuf/proto"
