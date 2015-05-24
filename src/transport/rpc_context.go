@@ -9,23 +9,34 @@ const (
 	RpcType_Oneway
 )
 
-type IContext interface {
+type IPackage interface {
 	GetRpcType() byte
+	GetMethod() string
+	GetBody() proto.Message
+
 	SetSeqNum(uint32)
 	GetSeqNum() uint32
-	GetMethod() string
 	Marshal() ([]byte, error)
-	GetBody() proto.Message
 	CallError(error) bool
 }
 
-// definition for IContext
 type Package struct {
 	rpc_type byte
 	rsp_status byte
 	seq_num uint32
 	method string
 	body proto.Message
+}
+
+type IContext interface {
+	IPackage
+	Reply(status byte, response proto.Message) error
+}
+
+// definition for IContext
+type Context struct {
+	Package
+	conn IRpcConn
 }
 
 type ICallContext interface {
@@ -134,6 +145,16 @@ func (this *Package) GetBody() proto.Message {
 	return this.body
 }
 /// ------------------------- 
+
+/// ------------------------- Context
+func NewContext(pkg *Package, conn IRpcConn) *Context {
+	return &Context{*pkg, conn}
+}
+
+func (this *Context) Reply(status byte, response proto.Message) error {
+	return this.conn.reply(this, status, response)
+}
+/// -------------------------
 
 /// -------------------------  CallContext
 func NewCallContext(method string, body proto.Message, cb RpcCallback) *CallContext {

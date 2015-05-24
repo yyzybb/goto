@@ -2,7 +2,7 @@ package common
 
 const (
 	RpcError_Ok byte = iota
-	RpcError_NotConn
+	RpcError_NotEstab
 	RpcError_PackTooLarge
 	RpcError_Overwrite
 	RpcError_SendTimeout
@@ -10,6 +10,7 @@ const (
 	RpcError_NoMethod
 	RpcError_ParseError
 	RpcError_MagicCodeError
+	RpcError_RepeatMethod
 )
 
 type IError interface {

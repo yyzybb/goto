@@ -6,7 +6,11 @@ import "common"
 import "sync"
 import proto "encoding/protobuf/proto"
 
-type send_chan chan IContext
+type send_chan chan IPackage
+
+type IRpcConn interface {
+	reply(pkg IPackage, rsp_status byte, response proto.Message) error
+}
 
 type RpcConn struct {
 	low_layer     net.Conn
@@ -38,7 +42,7 @@ func NewRpcConn(low_layer net.Conn,
 		method_map }
 }
 
-func (c *RpcConn) Active() {
+func (c *RpcConn) active() {
 	// write
 	go func() {
 		for {
@@ -88,7 +92,7 @@ func (c *RpcConn) Active() {
 				break
 			}
 
-			ctx.CallError(common.NewError(common.RpcError_NotConn))
+			ctx.CallError(common.NewError(common.RpcError_NotEstab))
 		}
 
 		c.low_layer.Close()
@@ -119,7 +123,7 @@ func (c *RpcConn) Active() {
         }
 
 		for _, ctx := range c.ctx_map {
-			ctx.CallError(common.NewError(common.RpcError_NotConn))
+			ctx.CallError(common.NewError(common.RpcError_NotEstab))
         }
 
 		c.low_layer.Close()
@@ -158,7 +162,7 @@ func (c *RpcConn) do_package(pkg *Package, body []byte) {
 		if ok == false {
 			// unkown method
 			if pkg.rpc_type == RpcType_Request {
-				go c.Reply(pkg, common.RpcError_NoMethod, nil)
+				go c.reply(pkg, common.RpcError_NoMethod, nil)
             }
 
 			return
@@ -175,38 +179,51 @@ func (c *RpcConn) do_package(pkg *Package, body []byte) {
 			return
 		}
 
-		method_info.service_func(pkg, pkg.body)
+		ctx := NewContext(pkg, c)
+		go method_info.service_func(ctx, pkg.body)
     }
 }
 
-func (c *RpcConn) AsynCall(method string, body proto.Message, cb RpcCallback) error {
+func (c *RpcConn) AsynCall(method string, request proto.Message, cb RpcCallback) error {
 	if c.channel_ok == false {
-		return common.NewError(common.RpcError_NotConn)
+		return common.NewError(common.RpcError_NotEstab)
 	}
 
-	request := NewCallContext(method, body, cb)
+	req := NewCallContext(method, request, cb)
 	t := time.After(c.send_timeout)
 
 	c.chan_lock.RLock()
 	defer c.chan_lock.RUnlock()
+	if c.channel_ok == false {
+		return common.NewError(common.RpcError_NotEstab)
+	}
+
 	select {
-	case c.send_queue <- request:
+	case c.send_queue <- req:
 		return nil
 	case <-t:
 		return common.NewError(common.RpcError_SendTimeout)
 	}
 }
 
-func (c *RpcConn) Reply(ctx IContext, rsp_status byte, body proto.Message) error {
+func (c *RpcConn) reply(pkg IPackage, rsp_status byte, response proto.Message) error {
+	if pkg.GetRpcType() != RpcType_Request {
+		return nil
+    }
+
 	if c.channel_ok == false {
-		return common.NewError(common.RpcError_NotConn)
+		return common.NewError(common.RpcError_NotEstab)
 	}
 
-	rsp := NewResponsePackage(rsp_status, ctx.GetSeqNum(), ctx.GetMethod(), body)
+	rsp := NewResponsePackage(rsp_status, pkg.GetSeqNum(), pkg.GetMethod(), response)
 	t := time.After(c.send_timeout)
 
 	c.chan_lock.RLock()
 	defer c.chan_lock.RUnlock()
+	if c.channel_ok == false {
+		return common.NewError(common.RpcError_NotEstab)
+	}
+
 	select {
 	case c.send_queue <- rsp:
 		return nil
