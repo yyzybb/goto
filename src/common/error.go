@@ -36,5 +36,22 @@ func (e *Error) Code() int {
 }
 
 func (e *Error) Error() string {
-	return "error:{" + string(e.code) + ", " + e.what + "}"
+	return "error:{" + e.CodeToString() + ", " + e.what + "}"
+}
+
+func (e *Error) CodeToString() string {
+	switch byte(e.code) {
+		case RpcError_Ok: return "RpcError_Ok"
+		case RpcError_NotEstab: return "RpcError_NotEstab"
+		case RpcError_PackTooLarge: return "RpcError_PackTooLarge"
+		case RpcError_Overwrite: return "RpcError_Overwrite"
+		case RpcError_SendTimeout: return "RpcError_SendTimeout"
+		case RpcError_RecvTimeout: return "RpcError_RecvTimeout"
+		case RpcError_NoMethod: return "RpcError_NoMethod"
+		case RpcError_ParseError: return "RpcError_ParseError"
+		case RpcError_MagicCodeError: return "RpcError_MagicCodeError"
+		case RpcError_RepeatMethod: return "RpcError_RepeatMethod"
+	default:
+		return "unkown"
+    }
 }

@@ -40,7 +40,7 @@ type Context struct {
 }
 
 type ICallContext interface {
-	IContext
+	IPackage
 	Call(err error, response proto.Message) bool
 }
 
@@ -79,7 +79,7 @@ func (this *Package) CallError(error) bool {
 	return false
 }
 func (this *Package) Marshal() ([]byte, error) {
-	b := make([]byte, 1 + 2 + 1 + 4 + 1 + 1 + len(this.method))
+	b := make([]byte, 0, 1 + 2 + 1 + 4 + 1 + 1 + len(this.method))
 	b = append(b, 0xF8)
 	b = append(b, byte(0), byte(0))
 	b = append(b, this.rpc_type)

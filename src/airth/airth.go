@@ -1,11 +1,82 @@
-service ArithService {
-    rpc multiply (ArithRequest) returns (ArithResponse);
-    rpc divide (ArithRequest) returns (ArithResponse);
+package airth
+
+import proto "encoding/protobuf/proto"
+import json "encoding/json"
+import math "math"
+import "goto_rpc"
+
+import "io"
+import "net"
+import "net/rpc"
+import "net/rpc/protorpc"
+
+// Reference proto, json, and math imports to suppress error if they are not otherwise used.
+var _ = proto.Marshal
+var _ = &json.SyntaxError{}
+var _ = math.Inf
+
+type ArithRequest struct {
+	A                *int32 `protobuf:"varint,1,opt,name=a" json:"a,omitempty"`
+	B                *int32 `protobuf:"varint,2,opt,name=b" json:"b,omitempty"`
+	XXX_unrecognized []byte `json:"-"`
+}
+
+func (m *ArithRequest) Reset()         { *m = ArithRequest{} }
+func (m *ArithRequest) String() string { return proto.CompactTextString(m) }
+func (*ArithRequest) ProtoMessage()    {}
+
+func (m *ArithRequest) GetA() int32 {
+	if m != nil && m.A != nil {
+		return *m.A
+	}
+	return 0
+}
+
+func (m *ArithRequest) GetB() int32 {
+	if m != nil && m.B != nil {
+		return *m.B
+	}
+	return 0
+}
+
+type ArithResponse struct {
+	Val              *int32 `protobuf:"varint,1,opt,name=val" json:"val,omitempty"`
+	Quo              *int32 `protobuf:"varint,2,opt,name=quo" json:"quo,omitempty"`
+	Rem              *int32 `protobuf:"varint,3,opt,name=rem" json:"rem,omitempty"`
+	XXX_unrecognized []byte `json:"-"`
+}
+
+func (m *ArithResponse) Reset()         { *m = ArithResponse{} }
+func (m *ArithResponse) String() string { return proto.CompactTextString(m) }
+func (*ArithResponse) ProtoMessage()    {}
+
+func (m *ArithResponse) GetVal() int32 {
+	if m != nil && m.Val != nil {
+		return *m.Val
+	}
+	return 0
+}
+
+func (m *ArithResponse) GetQuo() int32 {
+	if m != nil && m.Quo != nil {
+		return *m.Quo
+	}
+	return 0
+}
+
+func (m *ArithResponse) GetRem() int32 {
+	if m != nil && m.Rem != nil {
+		return *m.Rem
+	}
+	return 0
+}
+
+func init() {
 }
 
 type IArithServiceAsyn interface {
-	Multiply(ctx IContext, request *ArithRequest)
-	Divide(ctx IContext, request *ArithRequest)
+	Multiply(ctx goto_rpc.IContext, request *ArithRequest)
+	Divide(ctx goto_rpc.IContext, request *ArithRequest)
 }
 
 func RegisterArithServiceAsyn(srv *goto_rpc.Server, service IArithServiceAsyn) error {
@@ -18,7 +89,7 @@ func RegisterArithServiceAsyn(srv *goto_rpc.Server, service IArithServiceAsyn) e
 	})
 	if e != nil { return e }
 
-	e := srv.AddServiceFunc("ArithService.Divide", func(ctx goto_rpc.IContext, request proto.Message) {
+	e = srv.AddServiceFunc("ArithService.Divide", func(ctx goto_rpc.IContext, request proto.Message) {
 		service.Divide(ctx, request.(*ArithRequest))
     }, func() proto.Message {
 		return &ArithRequest{}
@@ -31,8 +102,8 @@ func RegisterArithServiceAsyn(srv *goto_rpc.Server, service IArithServiceAsyn) e
 }
 
 type IArithServiceSync interface {
-	Multiply(ctx IContext, request *ArithRequest) (response *ArithResponse, status byte)
-	Divide(ctx IContext, request *ArithRequest) (response *ArithResponse, status byte)
+	Multiply(ctx goto_rpc.IContext, request *ArithRequest) (response *ArithResponse, status byte)
+	Divide(ctx goto_rpc.IContext, request *ArithRequest) (response *ArithResponse, status byte)
 }
 
 func RegisterArithServiceSync(srv *goto_rpc.Server, service IArithServiceSync) error {
@@ -46,7 +117,7 @@ func RegisterArithServiceSync(srv *goto_rpc.Server, service IArithServiceSync) e
 	})
 	if e != nil { return e }
 
-	e := srv.AddServiceFunc("ArithService.Divide", func(ctx goto_rpc.IContext, request proto.Message) {
+	e = srv.AddServiceFunc("ArithService.Divide", func(ctx goto_rpc.IContext, request proto.Message) {
 		rsp, s := service.Divide(ctx, request.(*ArithRequest))
 		ctx.Reply(s, rsp)
     }, func() proto.Message {
