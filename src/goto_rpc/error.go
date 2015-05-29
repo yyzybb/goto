@@ -1,4 +1,4 @@
-package common
+package goto_rpc
 
 const (
 	RpcError_Ok byte = iota

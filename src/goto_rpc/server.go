@@ -2,8 +2,6 @@ package goto_rpc
 
 import "net"
 import "time"
-import "common"
-import "log"
 
 type Server struct {
 	listener		net.Listener
@@ -25,11 +23,11 @@ func (this *Server) AddServiceFunc(method string, fn RpcServiceFunc,
 	req_factory RpcMessageFactoryFunc, rsp_factory RpcMessageFactoryFunc) (err error) {
 
 	if _, exists := this.method_map[method]; exists {
-		err = common.NewError(common.RpcError_RepeatMethod)
+		err = NewError(RpcError_RepeatMethod)
 		return 
     }
 
-	log.Printf("AddServiceFunc [%s]", method)
+	logger.Printf("AddServiceFunc [%s]", method)
 	method_info := &MethodInfo{method, fn, req_factory, rsp_factory}
 	this.method_map[method] = method_info
 	return
@@ -42,7 +40,7 @@ func (this *Server) Start() {
 			continue
 		}
 
-		log.Printf("Accept %s", conn.RemoteAddr().String())
+		logger.Printf("Accept %s", conn.RemoteAddr().String())
 		rpc_conn := NewRpcConn(conn, this.send_timeout, this.recv_timeout, &this.method_map)
 		rpc_conn.active()
     }

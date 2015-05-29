@@ -26,6 +26,7 @@ func (this *ArithServiceAsyn) Divide(ctx goto_rpc.IContext, request *airth.Arith
 
 func TestServerAndClient(t *testing.T) {
 	fmt.Println("start test")
+	goto_rpc.CloseLog()
 	// initialize server.
 	lstn, e := net.Listen("tcp", "127.0.0.1:8090")
 	if e != nil {
@@ -54,7 +55,7 @@ func TestServerAndClient(t *testing.T) {
 
 	fmt.Println("client connected...")
 	client := goto_rpc.NewClient(conn)
-	stub := airth.NewArithService_Stub(client)
+	stub, _ := airth.NewArithService_Stub(client)
 
 	var a int32 = 5
 	var b int32 = 6

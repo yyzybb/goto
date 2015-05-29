@@ -1,6 +1,5 @@
 package goto_rpc
 
-import "common"
 import "strconv"
 import proto "encoding/protobuf/proto"
 
@@ -66,7 +65,7 @@ type CallContext struct {
 
 /// ------------------------- Package
 func NewRequestPackage(rpc_type byte, method string, body proto.Message) *Package {
-	return &Package{rpc_type, common.RpcError_Ok, 0, method, body}
+	return &Package{rpc_type, RpcError_Ok, 0, method, body}
 }
 func NewResponsePackage(rsp_status byte, seq_num uint32, method string, body proto.Message) *Package {
 	return &Package{RpcType_Response, rsp_status, seq_num, method, body}
@@ -111,7 +110,7 @@ func (this *Package) Marshal() ([]byte, error) {
 
 	length := len(b)
 	if length > 0xffff {
-		return []byte{}, common.NewError(common.RpcError_PackTooLarge)
+		return []byte{}, NewError(RpcError_PackTooLarge)
     }
 	b[1] = byte(length >> 8)
 	b[2] = byte(length & 0xff)
@@ -123,7 +122,7 @@ func Unmarshal_PackageHead(b []byte) (pkg *Package, body []byte, consume int, er
     }
 
 	if b[0] != 0xF8 {
-		err = common.NewError(common.RpcError_MagicCodeError)
+		err = NewError(RpcError_MagicCodeError)
 		return 
     }
 
@@ -145,7 +144,7 @@ func Unmarshal_PackageHead(b []byte) (pkg *Package, body []byte, consume int, er
 func Unmarshal_Body(pkg *Package, b []byte) (err error) {
 	e := proto.Unmarshal(b, pkg.body)
 	if e != nil {
-		err = common.NewErrorMsg(int(common.RpcError_ParseError), e.Error())
+		err = NewErrorMsg(int(RpcError_ParseError), e.Error())
 	}
 
 	return 

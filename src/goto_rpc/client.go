@@ -2,8 +2,6 @@ package goto_rpc
 
 import "net"
 import "time"
-import "common"
-import "log"
 import proto "encoding/protobuf/proto"
 
 type Client struct {
@@ -28,11 +26,11 @@ func (this *Client) AddServiceInfo(method string, req_factory RpcMessageFactoryF
 	rsp_factory RpcMessageFactoryFunc) (err error) {
 
 	if _, exists := this.method_map[method]; exists {
-		err = common.NewError(common.RpcError_RepeatMethod)
+		err = NewError(RpcError_RepeatMethod)
 		return 
     }
 
-	log.Printf("AddServiceInfo [%s]", method)
+	logger.Printf("AddServiceInfo [%s]", method)
 	method_info := &MethodInfo{method, nil, req_factory, rsp_factory}
 	this.method_map[method] = method_info
 	return
