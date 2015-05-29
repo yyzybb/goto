@@ -134,8 +134,24 @@ type ArithService_Stub struct {
 	*goto_rpc.Client
 }
 
-func NewArithService_Stub(c *goto_rpc.Client) *ArithService_Stub {
-	return &ArithService_Stub{c}
+func NewArithService_Stub(c *goto_rpc.Client) (stub *ArithService_Stub, e error) {
+	e = c.AddServiceInfo("ArithService.Multiply",
+	func() proto.Message {
+		return &ArithRequest{}
+	}, func() proto.Message {
+		return &ArithResponse{}
+	})
+	if e != nil { return }
+
+	e = c.AddServiceInfo("ArithService.Divide",
+	func() proto.Message {
+		return &ArithRequest{}
+	}, func() proto.Message {
+		return &ArithResponse{}
+	})
+	if e != nil { return }
+	stub = &ArithService_Stub{c}
+	return
 }
 
 func (stub *ArithService_Stub) Multiply(request *ArithRequest) (*ArithResponse, error) {

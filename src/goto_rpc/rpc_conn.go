@@ -1,6 +1,10 @@
 package goto_rpc
 
-import "net"
+import (
+	"log"
+	"net"
+	"strconv"
+)
 import "time"
 import "common"
 import "sync"
@@ -14,21 +18,21 @@ type IRpcConn interface {
 
 type RpcConn struct {
 	low_layer     net.Conn
-	send_queue	  send_chan
+	send_queue    send_chan
 	channel_ok    bool
 	send_timeout  time.Duration
 	recv_timeout  time.Duration
 	recv_buf      []byte
 	chan_lock     sync.RWMutex
-	ctx_map		  map[uint32]ICallContext
+	ctx_map       map[uint32]ICallContext
 	start_seq_num uint32
-	method_map	  *MethodMap
+	method_map    *MethodMap
 }
 
 func NewRpcConn(low_layer net.Conn,
-		send_timeout time.Duration,
-		recv_timeout time.Duration,
-		method_map	  *MethodMap) *RpcConn {
+	send_timeout time.Duration,
+	recv_timeout time.Duration,
+	method_map *MethodMap) *RpcConn {
 
 	return &RpcConn{low_layer,
 		make(send_chan),
@@ -39,7 +43,7 @@ func NewRpcConn(low_layer net.Conn,
 		sync.RWMutex{},
 		make(map[uint32]ICallContext),
 		0,
-		method_map }
+		method_map}
 }
 
 func (c *RpcConn) active() {
@@ -51,38 +55,45 @@ func (c *RpcConn) active() {
 				break
 			}
 
+			is_inserted_ctx_map := false
+			if ctx.GetRpcType() == RpcType_Request {
+				if call_ctx, ok := ctx.(ICallContext); ok {
+					c.start_seq_num++
+					ctx.SetSeqNum(c.start_seq_num)
+
+					old_ctx, ok := c.ctx_map[ctx.GetSeqNum()]
+					if ok == true {
+						old_ctx.CallError(common.NewError(common.RpcError_Overwrite))
+					}
+
+					c.ctx_map[ctx.GetSeqNum()] = call_ctx
+					time.AfterFunc(c.recv_timeout, func() {
+						if ctx.CallError(common.NewError(common.RpcError_RecvTimeout)) == true {
+							delete(c.ctx_map, ctx.GetSeqNum())
+						}
+					})
+
+					is_inserted_ctx_map = true
+				}
+			}
+
 			b, e := ctx.Marshal()
 			if e != nil {
+				if is_inserted_ctx_map == true {
+					delete(c.ctx_map, ctx.GetSeqNum())
+				}
 				ctx.CallError(e)
 				continue
 			}
 
 			_, e = c.low_layer.Write(b)
 			if e != nil {
+				if is_inserted_ctx_map == true {
+					delete(c.ctx_map, ctx.GetSeqNum())
+				}
 				ctx.CallError(e)
 				break
 			}
-
-			if ctx.GetRpcType() != RpcType_Request {
-				continue
-            }
-
-			if call_ctx, ok := ctx.(ICallContext); ok {
-				c.start_seq_num++
-				ctx.SetSeqNum(c.start_seq_num)
-
-				old_ctx, ok := c.ctx_map[ctx.GetSeqNum()]
-				if ok == true {
-					old_ctx.CallError(common.NewError(common.RpcError_Overwrite))
-				}
-
-				c.ctx_map[ctx.GetSeqNum()] = call_ctx
-				time.AfterFunc(c.recv_timeout, func(){
-					if ctx.CallError(common.NewError(common.RpcError_RecvTimeout)) == true {
-						delete(c.ctx_map, ctx.GetSeqNum())
-					}
-				})
-            }
 		}
 
 		go c.Shutdown()
@@ -105,7 +116,7 @@ func (c *RpcConn) active() {
 			n, e := c.low_layer.Read(b)
 			if e != nil {
 				break
-            }
+			}
 
 			c.recv_buf = append(c.recv_buf, b[:n]...)
 		Retry:
@@ -113,53 +124,62 @@ func (c *RpcConn) active() {
 			if err != nil {
 				// data parse error
 				break
-            }
+			}
 
 			if pkg != nil {
 				c.recv_buf = c.recv_buf[consume:]
 				c.do_package(pkg, body)
 				goto Retry
-            }
-        }
+			}
+		}
 
 		for _, ctx := range c.ctx_map {
 			ctx.CallError(common.NewError(common.RpcError_NotEstab))
-        }
+		}
 
+		log.Printf("Disconnect %s", c.low_layer.RemoteAddr().String())
 		c.low_layer.Close()
-    }()
+	}()
 }
 
 func (c *RpcConn) do_package(pkg *Package, body []byte) {
+	log.Printf("recv package: {type=%s, status=%d, seq_num=%d, method=%s, has_body=%s}",
+		RpcTypeToString(pkg.rpc_type), pkg.rsp_status, pkg.seq_num, pkg.method,
+		strconv.FormatBool(pkg.body == nil))
+
 	if pkg.rpc_type == RpcType_Response {
 		ctx, ok := c.ctx_map[pkg.seq_num]
 		if ok == false {
 			// request was timeout, discard it.
-			return 
+			log.Fatalf("not in ctx map. size=%d", len(c.ctx_map))
+			return
 		}
 
 		method_info, ok := (*c.method_map)[pkg.method]
 		if ok == false {
 			// error response.
-			return 
+			log.Fatalf("hasn't method info. method_map size=%d", len(*c.method_map))
+			return
 		}
 
 		pkg.body = method_info.rsp_factory()
 		if pkg.body == nil {
 			// create response struct error.
-			return 
+			log.Fatalf("create response struct error.")
+			return
 		}
 
 		e := Unmarshal_Body(pkg, body)
 		if e != nil {
+			log.Fatalf("parse response body error.")
 			return
 		}
 
 		ctx.Call(nil, pkg.body)
 		delete(c.ctx_map, pkg.seq_num)
-    } else {
+	} else {
 		method_info, ok := (*c.method_map)[pkg.method]
-		if ok == false {
+		if ok == false || method_info.service_func == nil {
 			// unkown method
 			if pkg.rpc_type == RpcType_Request {
 				go c.reply(pkg, common.RpcError_NoMethod, nil)
@@ -171,17 +191,19 @@ func (c *RpcConn) do_package(pkg *Package, body []byte) {
 		pkg.body = method_info.req_factory()
 		if pkg.body == nil {
 			// create request struct error.
-			return 
+			log.Fatalf("create request struct error.")
+			return
 		}
 
 		e := Unmarshal_Body(pkg, body)
 		if e != nil {
+			log.Fatalf("parse request body error.")
 			return
 		}
 
 		ctx := NewContext(pkg, c)
 		go method_info.service_func(ctx, pkg.body)
-    }
+	}
 }
 
 func (c *RpcConn) AsynCall(method string, request proto.Message, cb RpcCallback) error {
@@ -209,7 +231,7 @@ func (c *RpcConn) AsynCall(method string, request proto.Message, cb RpcCallback)
 func (c *RpcConn) reply(pkg IPackage, rsp_status byte, response proto.Message) error {
 	if pkg.GetRpcType() != RpcType_Request {
 		return nil
-    }
+	}
 
 	if c.channel_ok == false {
 		return common.NewError(common.RpcError_NotEstab)

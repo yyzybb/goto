@@ -2,16 +2,19 @@ package goto_rpc
 
 import "net"
 import "time"
+import "common"
+import "log"
 import proto "encoding/protobuf/proto"
 
 type Client struct {
 	RpcConn
+	method_map		MethodMap
 }
 
 func NewClient(c net.Conn) *Client {
-	method_map := make(MethodMap)
 	rc := &Client{
-		*NewRpcConn(c, 3 * time.Second, 3 * time.Second, &method_map)}
+		*NewRpcConn(c, 3 * time.Second, 3 * time.Second, nil), make(MethodMap)}
+	rc.RpcConn.method_map = &rc.method_map
 	rc.active()
 	return rc
 }
@@ -19,6 +22,20 @@ func NewClient(c net.Conn) *Client {
 func (this *Client) SetTimeout(send_timeout, recv_timeout time.Duration) {
 	this.send_timeout = send_timeout
 	this.recv_timeout = recv_timeout
+}
+
+func (this *Client) AddServiceInfo(method string, req_factory RpcMessageFactoryFunc,
+	rsp_factory RpcMessageFactoryFunc) (err error) {
+
+	if _, exists := this.method_map[method]; exists {
+		err = common.NewError(common.RpcError_RepeatMethod)
+		return 
+    }
+
+	log.Printf("AddServiceInfo [%s]", method)
+	method_info := &MethodInfo{method, nil, req_factory, rsp_factory}
+	this.method_map[method] = method_info
+	return
 }
 
 func (this *Client) Call(method string, request proto.Message) (response proto.Message, err error) {

@@ -20,7 +20,11 @@ func client() {
 
 	fmt.Println("client connected...")
 	client := goto_rpc.NewClient(conn)
-	stub := airth.NewArithService_Stub(client)
+	stub, e := airth.NewArithService_Stub(client)
+	if e != nil {
+		fmt.Println("init stub error!", e.Error())
+		return 
+	}
 
 	var a int32 = 5
 	var b int32 = 6

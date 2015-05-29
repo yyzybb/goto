@@ -3,6 +3,7 @@ package goto_rpc
 import "net"
 import "time"
 import "common"
+import "log"
 
 type Server struct {
 	listener		net.Listener
@@ -28,6 +29,7 @@ func (this *Server) AddServiceFunc(method string, fn RpcServiceFunc,
 		return 
     }
 
+	log.Printf("AddServiceFunc [%s]", method)
 	method_info := &MethodInfo{method, fn, req_factory, rsp_factory}
 	this.method_map[method] = method_info
 	return
@@ -40,6 +42,7 @@ func (this *Server) Start() {
 			continue
 		}
 
+		log.Printf("Accept %s", conn.RemoteAddr().String())
 		rpc_conn := NewRpcConn(conn, this.send_timeout, this.recv_timeout, &this.method_map)
 		rpc_conn.active()
     }

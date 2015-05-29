@@ -1,6 +1,7 @@
 package goto_rpc
 
 import "common"
+import "strconv"
 import proto "encoding/protobuf/proto"
 
 const (
@@ -8,6 +9,15 @@ const (
 	RpcType_Response
 	RpcType_Oneway
 )
+
+func RpcTypeToString(rpc_type byte) string {
+	switch rpc_type {
+	case RpcType_Request: return "RpcType_Request"
+	case RpcType_Response: return "RpcType_Response"
+	case RpcType_Oneway: return "RpcType_Oneway"
+	default: return strconv.Itoa(int(rpc_type))
+    }
+}
 
 type IPackage interface {
 	GetRpcType() byte
@@ -126,8 +136,8 @@ func Unmarshal_PackageHead(b []byte) (pkg *Package, body []byte, consume int, er
 	pkg.rpc_type = b[3]
 	pkg.seq_num = uint32(b[4]) << 24 + uint32(b[5]) << 16 + uint32(b[6]) << 8 + uint32(b[7])
 	pkg.rsp_status = b[8]
-	head_tail := int(b[9]) + 9
-	pkg.method = string(b[9:head_tail])
+	head_tail := int(b[9]) + 10
+	pkg.method = string(b[10:head_tail])
 	body = b[head_tail:consume]
 	return 
 }
