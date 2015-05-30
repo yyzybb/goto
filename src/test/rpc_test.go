@@ -4,6 +4,7 @@ import "testing"
 import "net"
 import "goto_rpc"
 import airth "airth"
+import proto "encoding/protobuf/proto"
 import "fmt"
 
 type ArithServiceAsyn struct { }
@@ -57,15 +58,19 @@ func TestServerAndClient(t *testing.T) {
 	client := goto_rpc.NewClient(conn)
 	stub, _ := airth.NewArithService_Stub(client)
 
-	var a int32 = 5
-	var b int32 = 6
-	req := &airth.ArithRequest{&a, &b, nil}
+	req := &airth.ArithRequest{proto.Int(8), proto.Int(2), nil}
 	fmt.Println("rpc call...")
 	rsp, e := stub.Multiply(req)
 	if e != nil {
 		t.Fatal("rpc call error!", e.Error())
 		return 
 	}
+	fmt.Println("rpc response: ", rsp.GetVal())
 
+	rsp, e = stub.Divide(req)
+	if e != nil {
+		t.Fatal("rpc call error!", e.Error())
+		return 
+	}
 	fmt.Println("rpc response: ", rsp.GetVal())
 }

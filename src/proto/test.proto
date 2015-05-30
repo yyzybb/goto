@@ -1,4 +1,4 @@
-package arith;
+package airth;
  
 // go use cc_generic_services option
 option cc_generic_services = true;
