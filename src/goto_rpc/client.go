@@ -8,6 +8,9 @@ type IClient interface {
 	SetTimeout(send_timeout, recv_timeout time.Duration)
 	AddServiceInfo(string, RpcMessageFactoryFunc, RpcMessageFactoryFunc) (err error)
 	Call(method string, request proto.Message) (response proto.Message, err error)
+	AsynCall(method string, request proto.Message, cb RpcCallback) (e error)
+	Shutdown()
+	Close()
 }
 
 type Client struct {
@@ -19,6 +22,13 @@ func NewClient(c net.Conn, send_buf_size int) *Client {
 	method_map := make(MethodMap)
 	rc := &Client{
 		*NewRpcConn(c, 3 * time.Second, 3 * time.Second, &method_map, send_buf_size), &method_map}
+	rc.active()
+	return rc
+}
+
+func NewClientByMethodMap(c net.Conn, send_buf_size int, method_map *MethodMap) *Client {
+	rc := &Client{
+		*NewRpcConn(c, 3 * time.Second, 3 * time.Second, method_map, send_buf_size), method_map}
 	rc.active()
 	return rc
 }

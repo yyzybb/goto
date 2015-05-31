@@ -403,7 +403,7 @@ func (c *RpcConn) Shutdown() {
 	}
 }
 
-func (c *RpcConn) Close() error {
-	return c.low_layer.Close()
+func (c *RpcConn) Close() {
+	c.low_layer.Close()
 }
 
