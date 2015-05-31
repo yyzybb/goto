@@ -8,10 +8,11 @@ type Server struct {
 	method_map		MethodMap
 	send_timeout	time.Duration
 	recv_timeout	time.Duration
+	send_buf_size   int
 }
 
-func NewServer(listener net.Listener) *Server {
-	return &Server{listener, make(MethodMap), 3 * time.Second, 3 * time.Second}
+func NewServer(listener net.Listener, send_buf_size int) *Server {
+	return &Server{listener, make(MethodMap), 3 * time.Second, 3 * time.Second, send_buf_size}
 }
 
 func (this *Server) SetTimeout(send_timeout, recv_timeout time.Duration) {
@@ -41,7 +42,7 @@ func (this *Server) Start() {
 		}
 
 		logger.Printf("Accept %s", conn.RemoteAddr().String())
-		rpc_conn := NewRpcConn(conn, this.send_timeout, this.recv_timeout, &this.method_map)
+		rpc_conn := NewRpcConn(conn, this.send_timeout, this.recv_timeout, &this.method_map, this.send_buf_size)
 		rpc_conn.active()
     }
 }

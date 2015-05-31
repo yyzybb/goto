@@ -40,6 +40,7 @@ type Package struct {
 type IContext interface {
 	IPackage
 	Reply(status byte, response proto.Message) error
+	GoReply(status byte, response proto.Message) error
 }
 
 // definition for IContext
@@ -163,6 +164,10 @@ func NewContext(pkg *Package, conn IRpcConn) *Context {
 func (this *Context) Reply(status byte, response proto.Message) error {
 	return this.conn.reply(this, status, response)
 }
+
+func (this *Context) GoReply(status byte, response proto.Message) error {
+	return this.conn.go_reply(this, status, response)
+}
 /// -------------------------
 
 /// -------------------------  CallContext
@@ -177,7 +182,7 @@ func (this *CallContext) Call(err error, response proto.Message) bool {
     }
 
 	this.called = true
-	go this.cb(err, response)
+	this.cb(err, response)
 	return true
 }
 func (this *CallContext) CallError(err error) bool {

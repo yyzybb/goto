@@ -36,7 +36,7 @@ func TestServerAndClient(t *testing.T) {
 	}
 	fmt.Println("src initialize ok.")
 
-	srv := goto_rpc.NewServer(lstn)
+	srv := goto_rpc.NewServer(lstn, 1)
 	airth_service := &ArithServiceAsyn{}
 	e = airth.RegisterArithServiceAsyn(srv, airth_service)
 	if e != nil {
@@ -55,7 +55,7 @@ func TestServerAndClient(t *testing.T) {
 	}
 
 	fmt.Println("client connected...")
-	client := goto_rpc.NewClient(conn)
+	client := goto_rpc.NewClient(conn, 1)
 	stub, _ := airth.NewArithService_Stub(client)
 
 	req := &airth.ArithRequest{proto.Int(8), proto.Int(2), nil}

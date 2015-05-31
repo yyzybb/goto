@@ -4,31 +4,54 @@ import "net"
 import "goto_rpc"
 import airth "airth"
 import "fmt"
+import "time"
 
 type ArithServiceAsyn struct { }
 
+var request_c uint64 = 0
+
 func (this *ArithServiceAsyn) Multiply(ctx goto_rpc.IContext, request *airth.ArithRequest) {
-	fmt.Println("On Multiply")
+	request_c++
+	//fmt.Println("On Multiply")
 	val := request.GetA() * request.GetB()
 	response := &airth.ArithResponse{}
 	response.Val = &val
-	ctx.Reply(0, response)
+	e := ctx.GoReply(0, response)
+	if e != nil {
+		fmt.Println("reply error: ", e.Error())
+    }
 }
 
 func (this *ArithServiceAsyn) Divide(ctx goto_rpc.IContext, request *airth.ArithRequest) {
-	fmt.Println("On Divide")
+	request_c++
+	//fmt.Println("On Divide")
 	val := request.GetA() / request.GetB()
 	response := &airth.ArithResponse{}
 	response.Val = &val
-	ctx.Reply(0, response)
+	e := ctx.GoReply(0, response)
+	if e != nil {
+		fmt.Println("reply error: ", e.Error())
+    }
 }
 
 func main() {
 	fmt.Println("start test")
+	go func() {
+		c := time.Tick(time.Second * 1)
+		for {
+			select {
+			case <-c:
+            }
+
+			fmt.Println("request_c:", request_c)
+		}
+    }()
 	server()
 }
 
 func server() {
+	goto_rpc.CloseLog()
+
 	// initialize server.
 	lstn, e := net.Listen("tcp", "127.0.0.1:8090")
 	if e != nil {
@@ -37,7 +60,7 @@ func server() {
 	}
 	fmt.Println("src initialize ok.")
 
-	srv := goto_rpc.NewServer(lstn)
+	srv := goto_rpc.NewServer(lstn, 3000000)
 	airth_service := &ArithServiceAsyn{}
 	e = airth.RegisterArithServiceAsyn(srv, airth_service)
 	if e != nil {

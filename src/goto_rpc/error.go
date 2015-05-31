@@ -5,6 +5,7 @@ const (
 	RpcError_NotEstab
 	RpcError_PackTooLarge
 	RpcError_Overwrite
+	RpcError_BufferFull
 	RpcError_SendTimeout
 	RpcError_RecvTimeout
 	RpcError_NoMethod
@@ -45,6 +46,7 @@ func (e *Error) CodeToString() string {
 		case RpcError_NotEstab: return "RpcError_NotEstab"
 		case RpcError_PackTooLarge: return "RpcError_PackTooLarge"
 		case RpcError_Overwrite: return "RpcError_Overwrite"
+		case RpcError_BufferFull: return "RpcError_BufferFull"
 		case RpcError_SendTimeout: return "RpcError_SendTimeout"
 		case RpcError_RecvTimeout: return "RpcError_RecvTimeout"
 		case RpcError_NoMethod: return "RpcError_NoMethod"

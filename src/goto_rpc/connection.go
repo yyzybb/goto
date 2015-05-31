@@ -3,8 +3,10 @@ package goto_rpc
 import (
 	"net"
 	"strconv"
+	"fmt"
 )
 import "time"
+import "runtime"
 
 import "sync"
 import proto "encoding/protobuf/proto"
@@ -13,6 +15,7 @@ type send_chan chan IPackage
 
 type IRpcConn interface {
 	reply(pkg IPackage, rsp_status byte, response proto.Message) error
+	go_reply(pkg IPackage, rsp_status byte, response proto.Message) error
 }
 
 type RpcConn struct {
@@ -29,12 +32,11 @@ type RpcConn struct {
 }
 
 func NewRpcConn(low_layer net.Conn,
-	send_timeout time.Duration,
-	recv_timeout time.Duration,
-	method_map *MethodMap) *RpcConn {
+	send_timeout time.Duration, recv_timeout time.Duration,
+	method_map *MethodMap, send_buf_size int) *RpcConn {
 
 	return &RpcConn{low_layer,
-		make(send_chan),
+		make(send_chan, send_buf_size),
 		true,
 		send_timeout,
 		recv_timeout,
@@ -65,7 +67,35 @@ func (c *RpcConn) active() {
 						old_ctx.CallError(NewError(RpcError_Overwrite))
 					}
 
+					defer func() {
+						if ex := recover(); ex != nil {
+							fmt.Println("len(ctx_map):", len(c.ctx_map))
+							fmt.Println("seq_num:", ctx.GetSeqNum())
+							fmt.Println("seq_num:", call_ctx.GetSeqNum())
+							fmt.Println("proc:", runtime.GOMAXPROCS(0))
+
+							if c == nil {
+								fmt.Println("c is nil pointer")
+                            } else {
+								fmt.Println("c is ok")
+                            }
+							if ctx == nil {
+								fmt.Println("ctx is nil")
+                            } else {
+								fmt.Println("ctx is ok")
+                            }
+							if call_ctx == nil {
+								fmt.Println("call_ctx is nil")
+                            } else {
+								fmt.Println("call_ctx is ok")
+                            }
+							return
+                        }
+                    }()
+
 					c.ctx_map[ctx.GetSeqNum()] = call_ctx
+
+					var _ int
 					time.AfterFunc(c.recv_timeout, func() {
 						if ctx.CallError(NewError(RpcError_RecvTimeout)) == true {
 							delete(c.ctx_map, ctx.GetSeqNum())
@@ -95,7 +125,7 @@ func (c *RpcConn) active() {
 			}
 		}
 
-		go c.Shutdown()
+		c.Shutdown()
 		for {
 			ctx, ok := <-c.send_queue
 			if ok == false {
@@ -104,8 +134,6 @@ func (c *RpcConn) active() {
 
 			ctx.CallError(NewError(RpcError_NotEstab))
 		}
-
-		c.low_layer.Close()
 	}()
 
 	// read
@@ -130,6 +158,8 @@ func (c *RpcConn) active() {
 				c.do_package(pkg, body)
 				goto Retry
 			}
+
+			runtime.Gosched()
 		}
 
 		for _, ctx := range c.ctx_map {
@@ -137,7 +167,7 @@ func (c *RpcConn) active() {
 		}
 
 		logger.Printf("Disconnect %s", c.low_layer.RemoteAddr().String())
-		c.low_layer.Close()
+		c.close_read()
 	}()
 }
 
@@ -174,14 +204,14 @@ func (c *RpcConn) do_package(pkg *Package, body []byte) {
 			return
 		}
 
-		ctx.Call(nil, pkg.body)
 		delete(c.ctx_map, pkg.seq_num)
+		ctx.Call(nil, pkg.body)
 	} else {
 		method_info, ok := (*c.method_map)[pkg.method]
 		if ok == false || method_info.service_func == nil {
 			// unkown method
 			if pkg.rpc_type == RpcType_Request {
-				go c.reply(pkg, RpcError_NoMethod, nil)
+				c.reply(pkg, RpcError_NoMethod, nil)
             }
 
 			return
@@ -201,35 +231,82 @@ func (c *RpcConn) do_package(pkg *Package, body []byte) {
 		}
 
 		ctx := NewContext(pkg, c)
-		go method_info.service_func(ctx, pkg.body)
+		method_info.service_func(ctx, pkg.body)
 	}
 }
 
-func (c *RpcConn) AsynCall(method string, request proto.Message, cb RpcCallback) error {
+func (c *RpcConn) AsynCall(method string, request proto.Message, cb RpcCallback) (e error) {
 	if c.channel_ok == false {
 		return NewError(RpcError_NotEstab)
 	}
 
 	req := NewCallContext(method, request, cb)
-	t := time.After(c.send_timeout)
 
-	c.chan_lock.RLock()
-	defer c.chan_lock.RUnlock()
+	defer func(e *error) {
+		if err := recover(); err != nil {
+			*e = NewError(RpcError_NotEstab)
+        }
+	}(&e)
+
+	select {
+	case c.send_queue <- req:
+		time.AfterFunc(c.send_timeout, func() {
+			req.CallError(NewError(RpcError_SendTimeout))
+        })
+		return 
+	default:
+		return NewError(RpcError_BufferFull)
+	}
+}
+
+func (c *RpcConn) GoAsynCall(method string, request proto.Message, cb RpcCallback) (e error) {
 	if c.channel_ok == false {
 		return NewError(RpcError_NotEstab)
 	}
 
+	req := NewCallContext(method, request, cb)
+
+	//try send
+	defer func(e *error) {
+		if err := recover(); err != nil {
+			*e = NewError(RpcError_NotEstab)
+        }
+	}(&e)
+
 	select {
 	case c.send_queue <- req:
-		return nil
-	case <-t:
-		return NewError(RpcError_SendTimeout)
+		time.AfterFunc(c.send_timeout, func() {
+			req.CallError(NewError(RpcError_SendTimeout))
+        })
+		return 
+	default:
 	}
+
+	go func() {
+		defer func(e *error) {
+			if err := recover(); err != nil {
+				*e = NewError(RpcError_NotEstab)
+			}
+		}(&e)
+
+		t := time.After(c.send_timeout)
+		select {
+		case c.send_queue <- req:
+			time.AfterFunc(c.send_timeout, func() {
+				req.CallError(NewError(RpcError_SendTimeout))
+			})
+			return 
+		case <-t:
+			cb(NewError(RpcError_SendTimeout), nil)
+		}
+	}()
+
+	return 
 }
 
-func (c *RpcConn) reply(pkg IPackage, rsp_status byte, response proto.Message) error {
+func (c *RpcConn) reply(pkg IPackage, rsp_status byte, response proto.Message) (e error) {
 	if pkg.GetRpcType() != RpcType_Request {
-		return nil
+		return
 	}
 
 	if c.channel_ok == false {
@@ -237,32 +314,96 @@ func (c *RpcConn) reply(pkg IPackage, rsp_status byte, response proto.Message) e
 	}
 
 	rsp := NewResponsePackage(rsp_status, pkg.GetSeqNum(), pkg.GetMethod(), response)
-	t := time.After(c.send_timeout)
 
-	c.chan_lock.RLock()
-	defer c.chan_lock.RUnlock()
+	defer func(e *error) {
+		if err := recover(); err != nil {
+			*e = NewError(RpcError_SendTimeout)
+        }
+	}(&e)
+
+	select {
+	case c.send_queue <- rsp:
+		return
+	default:
+		return NewError(RpcError_BufferFull)
+	}
+}
+
+
+func (c *RpcConn) go_reply(pkg IPackage, rsp_status byte, response proto.Message) (e error) {
+	if pkg.GetRpcType() != RpcType_Request {
+		return
+	}
+
 	if c.channel_ok == false {
 		return NewError(RpcError_NotEstab)
 	}
 
+	rsp := NewResponsePackage(rsp_status, pkg.GetSeqNum(), pkg.GetMethod(), response)
+
+	// try reply
+	defer func(e *error) {
+		if err := recover(); err != nil {
+			*e = NewError(RpcError_SendTimeout)
+        }
+	}(&e)
+
 	select {
 	case c.send_queue <- rsp:
-		return nil
-	case <-t:
-		return NewError(RpcError_SendTimeout)
+		return
+	default:
+	}
+
+	go func() {
+		defer func(e *error) {
+			if err := recover(); err != nil {
+				*e = NewError(RpcError_SendTimeout)
+			}
+		}(&e)
+
+		t := time.After(c.send_timeout)
+		select {
+		case c.send_queue <- rsp:
+		case <-t:
+		}
+	}()
+
+	return 
+}
+
+func (c *RpcConn) close_write() {
+	tcp_conn, ok := c.low_layer.(*net.TCPConn)
+	if ok {
+		tcp_conn.CloseWrite()
+	} else {
+		c.low_layer.Close()
+	}
+}
+
+func (c *RpcConn) close_read() {
+	tcp_conn, ok := c.low_layer.(*net.TCPConn)
+	if ok {
+		tcp_conn.CloseRead()
+	} else {
+		c.low_layer.Close()
 	}
 }
 
 func (c *RpcConn) Shutdown() {
-	if c.channel_ok == true {
+	if c.channel_ok {
 		c.channel_ok = false
 
 		c.chan_lock.Lock()
 		defer c.chan_lock.Unlock()
-		close(c.send_queue)
+
+		if c.channel_ok {
+			close(c.send_queue)
+			c.close_write()
+        }
 	}
 }
 
-func (c *RpcConn) ForceClose() error {
+func (c *RpcConn) Close() error {
 	return c.low_layer.Close()
 }
+

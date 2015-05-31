@@ -172,14 +172,26 @@ func (stub *ArithService_Stub) Divide(request *ArithRequest) (*ArithResponse, er
 	response, _ := rsp.(*ArithResponse)
 	return response, e
 }
-func (stub *ArithService_Stub) AsynMultiply(request *ArithRequest, cb func(error, *ArithResponse)) {
-	stub.AsynCall("ArithService.Multiply", request, func(err error, rsp proto.Message) {
+func (stub *ArithService_Stub) AsynMultiply(request *ArithRequest, cb func(error, *ArithResponse)) error {
+	return stub.AsynCall("ArithService.Multiply", request, func(err error, rsp proto.Message) {
 		response, _ := rsp.(*ArithResponse)
 		cb(err, response)
 	})
 }
-func (stub *ArithService_Stub) AsynDivide(request *ArithRequest, cb func(error, *ArithResponse)) {
-	stub.AsynCall("ArithService.Divide", request, func(err error, rsp proto.Message) {
+func (stub *ArithService_Stub) AsynDivide(request *ArithRequest, cb func(error, *ArithResponse)) error {
+	return stub.AsynCall("ArithService.Divide", request, func(err error, rsp proto.Message) {
+		response, _ := rsp.(*ArithResponse)
+		cb(err, response)
+	})
+}
+func (stub *ArithService_Stub) GoAsynMultiply(request *ArithRequest, cb func(error, *ArithResponse)) error {
+	return stub.GoAsynCall("ArithService.Multiply", request, func(err error, rsp proto.Message) {
+		response, _ := rsp.(*ArithResponse)
+		cb(err, response)
+	})
+}
+func (stub *ArithService_Stub) GoAsynDivide(request *ArithRequest, cb func(error, *ArithResponse)) error {
+	return stub.GoAsynCall("ArithService.Divide", request, func(err error, rsp proto.Message) {
 		response, _ := rsp.(*ArithResponse)
 		cb(err, response)
 	})
