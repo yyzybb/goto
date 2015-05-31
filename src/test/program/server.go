@@ -2,7 +2,7 @@ package main
 
 import "net"
 import "goto_rpc"
-import airth "airth"
+import airth "test/airth"
 import "fmt"
 import "time"
 

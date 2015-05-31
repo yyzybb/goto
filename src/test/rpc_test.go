@@ -3,7 +3,7 @@ package test
 import "testing"
 import "net"
 import "goto_rpc"
-import airth "airth"
+import airth "test/airth"
 import proto "encoding/protobuf/proto"
 import "fmt"
 

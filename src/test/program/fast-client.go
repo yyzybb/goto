@@ -6,7 +6,7 @@ import (
 	"runtime"
 )
 import "goto_rpc"
-import airth "airth"
+import airth "test/airth"
 import "fmt"
 import proto "encoding/protobuf/proto"
 
