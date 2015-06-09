@@ -5,6 +5,7 @@ import (
 	"testing"
 	//"os"
 	//"runtime/pprof"
+	//"runtime"
 )
 import "net"
 import "goto_rpc"
@@ -131,13 +132,13 @@ func Benchmark_ServerAndClient(b *testing.B) {
 	req := &airth.ArithRequest{proto.Int(8), proto.Int(2), nil}
 
 	c := make(chan int)
-	var count *int = new(int)
+	count := 0
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		e := stub.AsynMultiply(req, func(error, *airth.ArithResponse) {
 			//fmt.Println("Cb")
-			*count++
-			if *count == b.N {
+			count++
+			if count == b.N {
 				c <- 1
 			}
 		})
@@ -145,6 +146,8 @@ func Benchmark_ServerAndClient(b *testing.B) {
 			b.Errorf("err")
 			return
 		}
+
+		//runtime.Gosched()
 	}
 
 	<-c
