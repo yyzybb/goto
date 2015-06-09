@@ -5,6 +5,11 @@ import "goto_rpc"
 import airth "test/airth"
 import "fmt"
 import "time"
+import (
+	"os"
+	"os/signal"
+	"runtime/pprof"
+)
 
 type ArithServiceAsyn struct { }
 
@@ -35,6 +40,17 @@ func (this *ArithServiceAsyn) Divide(ctx goto_rpc.IContext, request *airth.Arith
 }
 
 func main() {
+	//pprof
+	f, _ := os.Create("profile_server")
+	pprof.StartCPUProfile(f)
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt, os.Kill)
+		<-c
+		pprof.StopCPUProfile()
+		os.Exit(0)
+    }()
+
 	fmt.Println("start test")
 	go func() {
 		c := time.Tick(time.Second * 1)

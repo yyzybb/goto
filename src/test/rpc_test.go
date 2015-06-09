@@ -3,6 +3,8 @@ package test
 import (
 	"sync"
 	"testing"
+	//"os"
+	//"runtime/pprof"
 )
 import "net"
 import "goto_rpc"
@@ -83,7 +85,15 @@ func TestServerAndClient(t *testing.T) {
 var srv_once sync.Once
 
 func Benchmark_ServerAndClient(b *testing.B) {
+	b.StopTimer()
 	goto_rpc.CloseLog()
+
+	/*
+	// pprof
+	f, _ := os.Create("pprof")
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
+	*/
 
 	//fmt.Println("bench", b.N)
 
@@ -122,6 +132,7 @@ func Benchmark_ServerAndClient(b *testing.B) {
 
 	c := make(chan int)
 	var count *int = new(int)
+	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		e := stub.AsynMultiply(req, func(error, *airth.ArithResponse) {
 			//fmt.Println("Cb")

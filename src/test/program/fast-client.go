@@ -4,6 +4,8 @@ import (
 	"net"
 	"time"
 	"runtime"
+	"os"
+	"runtime/pprof"
 )
 import "goto_rpc"
 import airth "test/airth"
@@ -11,6 +13,11 @@ import "fmt"
 import proto "encoding/protobuf/proto"
 
 func main() {
+	//pprof
+	f, _ := os.Create("profile_fclient")
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
+
 	go func() {
 		c := time.Tick(time.Millisecond * 1000)
 		for {

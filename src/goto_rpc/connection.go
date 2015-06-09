@@ -39,7 +39,7 @@ func NewRpcConn(low_layer net.Conn,
 		true,
 		send_timeout,
 		recv_timeout,
-		make([]byte, 0),
+		make([]byte, 4096),
 		sync.RWMutex{},
 		make(map[uint32]ICallContext),
 		0,
@@ -47,100 +47,101 @@ func NewRpcConn(low_layer net.Conn,
 }
 
 func (c *RpcConn) active() {
-	// write
-	go func() {
-		for {
-			ctx, ok := <-c.send_queue
-			if ok == false {
-				break
-			}
+	go c.do_write()
+	go c.do_read()
+}
 
-			is_inserted_ctx_map := false
-			if ctx.GetRpcType() == RpcType_Request {
-				if call_ctx, ok := ctx.(ICallContext); ok {
-					c.start_seq_num++
-					ctx.SetSeqNum(c.start_seq_num)
+func (c *RpcConn) do_write() {
+	for {
+		ctx, ok := <-c.send_queue
+		if ok == false {
+			break
+		}
 
-					old_ctx, ok := c.ctx_map[ctx.GetSeqNum()]
-					if ok == true {
-						old_ctx.CallError(NewError(RpcError_Overwrite))
+		is_inserted_ctx_map := false
+		if ctx.GetRpcType() == RpcType_Request {
+			if call_ctx, ok := ctx.(ICallContext); ok {
+				c.start_seq_num++
+				ctx.SetSeqNum(c.start_seq_num)
+
+				old_ctx, ok := c.ctx_map[ctx.GetSeqNum()]
+				if ok == true {
+					old_ctx.CallError(NewError(RpcError_Overwrite))
+				}
+
+				c.ctx_map[ctx.GetSeqNum()] = call_ctx
+
+				time.AfterFunc(c.recv_timeout, func() {
+					if ctx.CallError(NewError(RpcError_RecvTimeout)) == true {
+						delete(c.ctx_map, ctx.GetSeqNum())
 					}
+				})
 
-					c.ctx_map[ctx.GetSeqNum()] = call_ctx
-
-					time.AfterFunc(c.recv_timeout, func() {
-						if ctx.CallError(NewError(RpcError_RecvTimeout)) == true {
-							delete(c.ctx_map, ctx.GetSeqNum())
-						}
-					})
-
-					is_inserted_ctx_map = true
-				}
-			}
-
-			b, e := ctx.Marshal()
-			if e != nil {
-				if is_inserted_ctx_map == true {
-					delete(c.ctx_map, ctx.GetSeqNum())
-				}
-				ctx.CallError(e)
-				continue
-			}
-
-			_, e = c.low_layer.Write(b)
-			if e != nil {
-				if is_inserted_ctx_map == true {
-					delete(c.ctx_map, ctx.GetSeqNum())
-				}
-				ctx.CallError(e)
-				break
+				is_inserted_ctx_map = true
 			}
 		}
 
-		c.Shutdown()
-		for {
-			ctx, ok := <-c.send_queue
-			if ok == false {
-				break
+		b, e := ctx.Marshal()
+		if e != nil {
+			if is_inserted_ctx_map == true {
+				delete(c.ctx_map, ctx.GetSeqNum())
 			}
-
-			ctx.CallError(NewError(RpcError_NotEstab))
-		}
-	}()
-
-	// read
-	go func() {
-		for {
-			b := make([]byte, 4096)
-			n, e := c.low_layer.Read(b)
-			if e != nil {
-				break
-			}
-
-			c.recv_buf = append(c.recv_buf, b[:n]...)
-		Retry:
-			pkg, body, consume, err := Unmarshal_PackageHead(c.recv_buf)
-			if err != nil {
-				// data parse error
-				break
-			}
-
-			if pkg != nil {
-				c.recv_buf = c.recv_buf[consume:]
-				c.do_package(pkg, body)
-				goto Retry
-			}
-
-			runtime.Gosched()
+			ctx.CallError(e)
+			continue
 		}
 
-		for _, ctx := range c.ctx_map {
-			ctx.CallError(NewError(RpcError_NotEstab))
+		_, e = c.low_layer.Write(b)
+		if e != nil {
+			if is_inserted_ctx_map == true {
+				delete(c.ctx_map, ctx.GetSeqNum())
+			}
+			ctx.CallError(e)
+			break
+		}
+	}
+
+	c.Shutdown()
+	for {
+		ctx, ok := <-c.send_queue
+		if ok == false {
+			break
 		}
 
-		logger.Printf("Disconnect %s", c.low_layer.RemoteAddr().String())
-		c.close_read()
-	}()
+		ctx.CallError(NewError(RpcError_NotEstab))
+	}
+}
+
+func (c *RpcConn) do_read() {
+	pos := 0
+	for {
+		n, e := c.low_layer.Read(c.recv_buf[pos:])
+		if e != nil {
+			break
+		}
+		pos += n
+		nn := 0
+	Retry:
+		pkg, body, consume, err := Unmarshal_PackageHead(c.recv_buf[nn:pos])
+		if err != nil {
+			// data parse error
+			break
+		}
+		if pkg != nil {
+			nn += consume
+			c.do_package(pkg, body)
+			goto Retry
+		}
+		copy(c.recv_buf, c.recv_buf[nn:pos])
+		pos -= nn
+		runtime.Gosched()
+	}
+
+	for _, ctx := range c.ctx_map {
+		ctx.CallError(NewError(RpcError_NotEstab))
+	}
+
+	logger.Printf("Disconnect %s", c.low_layer.RemoteAddr().String())
+	c.close_read()
 }
 
 func (c *RpcConn) do_package(pkg *Package, body []byte) {
