@@ -3,7 +3,6 @@ package goto_rpc
 import (
 	"net"
 	"strconv"
-	"fmt"
 )
 import "time"
 import "runtime"
@@ -67,35 +66,8 @@ func (c *RpcConn) active() {
 						old_ctx.CallError(NewError(RpcError_Overwrite))
 					}
 
-					defer func() {
-						if ex := recover(); ex != nil {
-							fmt.Println("len(ctx_map):", len(c.ctx_map))
-							fmt.Println("seq_num:", ctx.GetSeqNum())
-							fmt.Println("seq_num:", call_ctx.GetSeqNum())
-							fmt.Println("proc:", runtime.GOMAXPROCS(0))
-
-							if c == nil {
-								fmt.Println("c is nil pointer")
-                            } else {
-								fmt.Println("c is ok")
-                            }
-							if ctx == nil {
-								fmt.Println("ctx is nil")
-                            } else {
-								fmt.Println("ctx is ok")
-                            }
-							if call_ctx == nil {
-								fmt.Println("call_ctx is nil")
-                            } else {
-								fmt.Println("call_ctx is ok")
-                            }
-							return
-                        }
-                    }()
-
 					c.ctx_map[ctx.GetSeqNum()] = call_ctx
 
-					var _ int
 					time.AfterFunc(c.recv_timeout, func() {
 						if ctx.CallError(NewError(RpcError_RecvTimeout)) == true {
 							delete(c.ctx_map, ctx.GetSeqNum())

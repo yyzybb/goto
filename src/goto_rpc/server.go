@@ -46,3 +46,7 @@ func (this *Server) Start() {
 		rpc_conn.active()
     }
 }
+
+func (this *Server) Close() error {
+	return this.listener.Close()
+}
