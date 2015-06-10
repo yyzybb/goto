@@ -42,15 +42,16 @@ func main() {
 		fmt.Println("init stub error!", e.Error())
 		return
 	}
+	client.SetTimeout(0, 0)
 
 	req := &airth.ArithRequest{proto.Int(5), proto.Int(6), nil}
 
-	count := 30000 * 10
+	count := 30000 * 100
 	recv := 0
 	exit_c := make(chan int)
 	start := time.Now()
 	for i := 0; i < count; i++ {
-		e = stub.AsynMultiply(req, func(e error, response *airth.ArithResponse) {
+		e = stub.GoAsynMultiply(req, func(e error, response *airth.ArithResponse) {
 			if e != nil {
 				fmt.Println("AsyncMultiply go call error:", e.Error())
 			} else {
@@ -66,9 +67,10 @@ func main() {
 			fmt.Println("rpc call error!", e.Error())
 		}
 
-		runtime.Gosched()
+		//runtime.Gosched()
 	}
 
+	fmt.Println("call done")
 	<-exit_c;
 	fmt.Println("done")
 	end := time.Now()

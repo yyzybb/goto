@@ -71,11 +71,13 @@ func (c *RpcConn) do_write() {
 
 				c.ctx_map[ctx.GetSeqNum()] = call_ctx
 
-				time.AfterFunc(c.recv_timeout, func() {
-					if ctx.CallError(NewError(RpcError_RecvTimeout)) == true {
-						delete(c.ctx_map, ctx.GetSeqNum())
-					}
-				})
+				if c.recv_timeout > 0 {
+					time.AfterFunc(c.recv_timeout, func() {
+						if ctx.CallError(NewError(RpcError_RecvTimeout)) == true {
+							delete(c.ctx_map, ctx.GetSeqNum())
+						}
+					})
+				}
 
 				is_inserted_ctx_map = true
 			}
@@ -223,9 +225,11 @@ func (c *RpcConn) AsynCall(method string, request proto.Message, cb RpcCallback)
 
 	select {
 	case c.send_queue <- req:
-		time.AfterFunc(c.send_timeout, func() {
-			req.CallError(NewError(RpcError_SendTimeout))
-        })
+		if c.send_timeout > 0 {
+			time.AfterFunc(c.send_timeout, func() {
+				req.CallError(NewError(RpcError_SendTimeout))
+			})
+        }
 		return 
 	default:
 		return NewError(RpcError_BufferFull)
@@ -248,9 +252,11 @@ func (c *RpcConn) GoAsynCall(method string, request proto.Message, cb RpcCallbac
 
 	select {
 	case c.send_queue <- req:
-		time.AfterFunc(c.send_timeout, func() {
-			req.CallError(NewError(RpcError_SendTimeout))
-        })
+		if c.send_timeout > 0 {
+			time.AfterFunc(c.send_timeout, func() {
+				req.CallError(NewError(RpcError_SendTimeout))
+			})
+        }
 		return 
 	default:
 	}
@@ -262,16 +268,20 @@ func (c *RpcConn) GoAsynCall(method string, request proto.Message, cb RpcCallbac
 			}
 		}(&e)
 
-		t := time.After(c.send_timeout)
-		select {
-		case c.send_queue <- req:
-			time.AfterFunc(c.send_timeout, func() {
-				req.CallError(NewError(RpcError_SendTimeout))
-			})
-			return 
-		case <-t:
-			cb(NewError(RpcError_SendTimeout), nil)
-		}
+		if c.send_timeout > 0 {
+			t := time.After(c.send_timeout)
+			select {
+			case c.send_queue <- req:
+				time.AfterFunc(c.send_timeout, func() {
+					req.CallError(NewError(RpcError_SendTimeout))
+				})
+				return 
+			case <-t:
+				cb(NewError(RpcError_SendTimeout), nil)
+			}
+        } else {
+			c.send_queue <- req
+        }
 	}()
 
 	return 
@@ -334,11 +344,15 @@ func (c *RpcConn) go_reply(pkg IPackage, rsp_status byte, response proto.Message
 			}
 		}(&e)
 
-		t := time.After(c.send_timeout)
-		select {
-		case c.send_queue <- rsp:
-		case <-t:
-		}
+		if c.send_timeout > 0 {
+			t := time.After(c.send_timeout)
+			select {
+			case c.send_queue <- rsp:
+			case <-t:
+			}
+        } else {
+			c.send_queue <- rsp
+        }
 	}()
 
 	return 

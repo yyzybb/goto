@@ -40,23 +40,36 @@ func (this *ClientGroup) down_conn(key string) {
 }
 
 func (this *ClientGroup) get_conn() *Client {
-	i := 0
 	this.robin_index ++
 	if this.robin_index >= len(this.clients) {
 		this.robin_index = 0
 	}
-
+	i := 0
 	for _, c := range this.clients {
 		i++
 		if i == this.robin_index {
 			return c
         }
 	}
-
 	return nil
 }
 
 func (this *ClientGroup) AsynCall(method string, request proto.Message, cb RpcCallback) (e error) {
+	c := this.get_conn()
+	if c == nil {
+		e = NewError(RpcError_NotEstab)
+		return 
+	}
+	return c.AsynCall(method, request, cb)
+}
+
+func (this *ClientGroup) Call(method string, request proto.Message, cb RpcCallback) (rsp proto.Message, e error) {
+	c := this.get_conn()
+	if c == nil {
+		e = NewError(RpcError_NotEstab)
+		return 
+	}
+	rsp, e = c.Call(method, request)
 	return 
 }
 

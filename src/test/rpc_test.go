@@ -89,6 +89,8 @@ func Benchmark_ServerAndClient(b *testing.B) {
 	b.StopTimer()
 	goto_rpc.CloseLog()
 
+	b.N = 3000000
+
 	/*
 	// pprof
 	f, _ := os.Create("pprof")
@@ -150,5 +152,7 @@ func Benchmark_ServerAndClient(b *testing.B) {
 		//runtime.Gosched()
 	}
 
+	//fmt.Println("b.N:", b.N)
 	<-c
+	//fmt.Println("b.N:", b.N)
 }
